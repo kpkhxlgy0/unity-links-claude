@@ -12,7 +12,7 @@ the junction management scripts.
 ## Requirements
 
 - Windows 10 or newer.
-- Claude Code Desktop with [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.1 or newer installed.
+- Claude Code Desktop with [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.2 or newer installed.
 - The Unity Asset Links package installed in each Unity project that should receive links.
 - The umbrella `unity-links` repository for the supported junction and Unity Package installation commands.
 
@@ -44,8 +44,8 @@ pwsh -NoProfile -File D:\Tools\unity-links\Install-UnityPackage.ps1 `
   -UnityProject D:\Projects\YourUnityProject
 ```
 
-Restart Claude manually after changing the junction. This first release is not distributed through the Claude++
-Tweak Store.
+Restart Claude manually after changing the junction. The supported install path uses this junction; the release
+workflow does not publish the component to the Claude++ Tweak Store.
 
 ## Behavior
 
@@ -53,15 +53,18 @@ Tweak Store.
 - `ProjectSettings` links open Unity Project Settings.
 - `Packages` links open Package Manager and select the package when possible.
 - Line and column suffixes and local `file:` URLs use the same parsing rules as the Codex++ Tweak.
-- Modified clicks, web URLs, relative paths, directories, and files outside supported Unity folders keep Claude's
+- Claude-native relative code references are resolved through the current session workspace. Ambiguous or unresolved
+  references, modified clicks, web URLs, directories, and files outside supported Unity folders keep Claude's
   original behavior.
 - If the matching Unity Editor is unavailable, the Tweak reveals the file in Explorer and shows a short notice. It
   never launches Unity.
 
 ## Security
 
-The Main Tweak canonicalizes the file and project root, rejects lexical traversal and reparse-point aliases, and sends
-one bounded request over the existing per-project Windows Named Pipe. The Unity Package validates the request again.
+The Renderer Tweak uses Claude++'s permission-scoped Claude Sessions adapter only to resolve the current session's
+file reference and workspace root. The Main Tweak canonicalizes the file and project root, rejects lexical traversal
+and reparse-point aliases, and sends one bounded request over the existing per-project Windows Named Pipe. The Unity
+Package validates the request again.
 
 The Tweak does not register URL schemes, edit the registry, run a localhost service, install a native host, or control
 Claude or Unity processes.
@@ -72,10 +75,10 @@ Run the standalone tests:
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.0
+node .\scripts\release\validate-release.mjs $PWD 0.1.1
 ```
 
-Validate against the pinned Claude++ v0.2.1 source checkout:
+Validate against the pinned Claude++ v0.2.2 source checkout:
 
 ```powershell
 node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
@@ -89,10 +92,9 @@ evaluated without Node `require`, and disposed Main leases must remove their nam
 ## Release Process
 
 The manual `Release` workflow accepts a stable version without the `v` prefix. It requires `master`, runs all tests,
-validates the public distribution, verifies Claude++ v0.2.1 compatibility, creates or reuses the matching tag, and
+validates the public distribution, verifies Claude++ v0.2.2 compatibility, creates or reuses the matching tag, and
 creates a Draft Release for review. It does not publish to the Claude++ Tweak Store.
 
 ## License
 
 [MIT License](LICENSE)
-

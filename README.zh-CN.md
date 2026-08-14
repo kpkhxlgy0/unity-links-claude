@@ -11,7 +11,7 @@
 ## 环境要求
 
 - Windows 10 或更新版本。
-- 已安装 Claude Code Desktop 和 [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.1 或更新版本。
+- 已安装 Claude Code Desktop 和 [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.2 或更新版本。
 - 每个需要接收链接的 Unity 项目都已安装 Unity Asset Links package。
 - 使用 `unity-links` 总仓库提供的 junction 和 Unity Package 安装命令。
 
@@ -43,7 +43,8 @@ pwsh -NoProfile -File D:\Tools\unity-links\Install-UnityPackage.ps1 `
   -UnityProject D:\Projects\YourUnityProject
 ```
 
-junction 变化后需要手动重启 Claude。首个版本不通过 Claude++ Tweak Store 分发。
+junction 变化后需要手动重启 Claude。受支持的安装方式使用该 junction；发布流程不会把组件发布到
+Claude++ Tweak Store。
 
 ## 使用行为
 
@@ -51,11 +52,13 @@ junction 变化后需要手动重启 Claude。首个版本不通过 Claude++ Twe
 - `ProjectSettings` 链接打开 Unity Project Settings。
 - `Packages` 链接打开 Package Manager，并在可行时选中对应 package。
 - 行号、列号和本机 `file:` URL 使用与 Codex++ Tweak 相同的解析规则。
-- 带修饰键的点击、网页 URL、相对路径、目录和受支持 Unity 目录外的文件保留 Claude 原行为。
+- Claude 原生相对代码引用会通过当前会话工作区解析；存在歧义或无法解析的引用、带修饰键的点击、网页 URL、
+  目录和受支持 Unity 目录外的文件保留 Claude 原行为。
 - 匹配 Unity Editor 不可用时，只在 Explorer 中定位文件并显示短提示，不会启动 Unity。
 
 ## 安全边界
 
+Renderer Tweak 只通过 Claude++ 的权限隔离 Claude Sessions 适配器解析当前会话的文件引用和工作区根。
 Main Tweak 会规范化文件和项目根，拒绝词法穿越及 reparse-point 别名，再通过现有的按项目隔离 Windows
 Named Pipe 发送一次有界请求。Unity Package 会再次校验请求。
 
@@ -68,10 +71,10 @@ Unity 进程。
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.0
+node .\scripts\release\validate-release.mjs $PWD 0.1.1
 ```
 
-使用固定的 Claude++ v0.2.1 源码 checkout 验证：
+使用固定的 Claude++ v0.2.2 源码 checkout 验证：
 
 ```powershell
 node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
@@ -85,10 +88,9 @@ node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
 ## 发布流程
 
 手动 `Release` workflow 接受不带 `v` 的稳定版本。它要求从 `master` 运行，执行全部测试、校验公开分发文件、
-验证 Claude++ v0.2.1 兼容性、创建或复用对应 tag，最后生成供审核的 Draft Release。它不会发布到 Claude++
+验证 Claude++ v0.2.2 兼容性、创建或复用对应 tag，最后生成供审核的 Draft Release。它不会发布到 Claude++
 Tweak Store。
 
 ## 开源协议
 
 [MIT License](LICENSE)
-

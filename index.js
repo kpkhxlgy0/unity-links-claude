@@ -53,6 +53,20 @@ function splitLineColumn(value) {
   return { path: value, line: 0, column: 0 };
 }
 
+function parseClaudeSessionId(rawUrl) {
+  if (typeof rawUrl !== "string" || rawUrl === "") return null;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "app:" || url.hostname !== "localhost") return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    const epitaxyIndex = segments.indexOf("epitaxy");
+    if (epitaxyIndex < 0 || !segments[epitaxyIndex + 1]) return null;
+    return decodeURIComponent(segments[epitaxyIndex + 1]);
+  } catch {
+    return null;
+  }
+}
+
 function hasSupportedProjectSegment(filePath) {
   return /[\\/](?:Assets|ProjectSettings|Packages)[\\/]/i.test(filePath);
 }
@@ -280,6 +294,91 @@ async function handleOpenAsset(candidate, deps) {
   }
 }
 
+async function resolveUnityWorkspaceReference(workspaceRoot, referencePath, fsApi, pathApi) {
+  if (typeof workspaceRoot !== "string"
+      || typeof referencePath !== "string"
+      || workspaceRoot.trim() === ""
+      || referencePath.trim() === ""
+      || !pathApi.isAbsolute(workspaceRoot)
+      || pathApi.isAbsolute(referencePath)
+      || hasTraversalSegment(referencePath)) {
+    return null;
+  }
+
+  let canonicalRoot;
+  try {
+    const rootStats = await fsApi.promises.lstat(workspaceRoot);
+    if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) return null;
+    canonicalRoot = await fsApi.promises.realpath(workspaceRoot);
+    const assets = await fsApi.promises.stat(pathApi.join(canonicalRoot, "Assets"));
+    const projectVersion = await fsApi.promises.stat(
+      pathApi.join(canonicalRoot, "ProjectSettings", "ProjectVersion.txt"),
+    );
+    if (!assets.isDirectory() || !projectVersion.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const segments = referencePath.trim().split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0) return null;
+  const firstSegment = segments[0].toLowerCase();
+  const supportedRoot = SUPPORTED_ROOT_NAMES.find(
+    (rootName) => rootName.toLowerCase() === firstSegment,
+  );
+  if (supportedRoot) {
+    const direct = pathApi.join(canonicalRoot, supportedRoot, ...segments.slice(1));
+    try {
+      if ((await fsApi.promises.stat(direct)).isFile()) return direct;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  const suffix = segments.join("/").toLowerCase();
+  let match = null;
+  let ambiguous = false;
+
+  async function visit(directory, relativeSegments) {
+    if (ambiguous) return;
+    let entries;
+    try {
+      const directoryStats = await fsApi.promises.lstat(directory);
+      if (!directoryStats.isDirectory() || directoryStats.isSymbolicLink()) return;
+      entries = await fsApi.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (ambiguous) return;
+      if (entry.isSymbolicLink()) continue;
+      const absolute = pathApi.join(directory, entry.name);
+      const nextSegments = [...relativeSegments, entry.name];
+      if (entry.isDirectory()) {
+        await visit(absolute, nextSegments);
+        continue;
+      }
+      const relativePath = nextSegments.join("/").toLowerCase();
+      if (!entry.isFile()
+          || (relativePath !== suffix && !relativePath.endsWith("/" + suffix))) {
+        continue;
+      }
+      if (match && normalizeProjectRoot(match, pathApi) !== normalizeProjectRoot(absolute, pathApi)) {
+        ambiguous = true;
+        return;
+      }
+      match = absolute;
+    }
+  }
+
+  for (const rootName of SUPPORTED_ROOT_NAMES) {
+    await visit(pathApi.join(canonicalRoot, rootName), []);
+    if (ambiguous) return null;
+  }
+  return match;
+}
+
 function defaultMainDeps(api) {
   return {
     crypto: require("node:crypto"),
@@ -292,11 +391,25 @@ function defaultMainDeps(api) {
 }
 
 function startMain(api, injectedDeps) {
-  api.ipc.handle("open-asset", (candidate) =>
-    handleOpenAsset(
-      candidate,
-      Object.keys(injectedDeps || {}).length > 0 ? injectedDeps : defaultMainDeps(api),
-    ));
+  const getDeps = () => Object.keys(injectedDeps || {}).length > 0
+    ? injectedDeps
+    : defaultMainDeps(api);
+  api.ipc.handle("open-asset", (candidate) => handleOpenAsset(candidate, getDeps()));
+  api.ipc.handle("resolve-workspace-asset", async (request) => {
+    const deps = getDeps();
+    const candidatePath = await resolveUnityWorkspaceReference(
+      request?.workspaceRoot,
+      request?.referencePath,
+      deps.fs,
+      deps.path,
+    );
+    if (!candidatePath) return { ok: false, handled: false, code: "fileUnresolved" };
+    return handleOpenAsset({
+      path: candidatePath,
+      line: request.line,
+      column: request.column,
+    }, deps);
+  });
 }
 
 function showNotice(message, documentApi) {
@@ -335,40 +448,107 @@ function replayOriginalClick(anchor) {
   }
 }
 
+function handleOpenResult(result, documentApi, link) {
+  if (!result || result.handled === false) {
+    replayOriginalClick(link);
+    return;
+  }
+  if (!result.ok) {
+    showNotice(
+      result.message || "Unity could not open this asset.",
+      documentApi,
+    );
+  }
+}
+
+function openParsedAsset(api, documentApi, link, parsed) {
+  return api.ipc.invoke("open-asset", parsed)
+    .then((result) => handleOpenResult(result, documentApi, link))
+    .catch(() => {
+      showNotice("Unity link handling failed.", documentApi);
+    });
+}
+
+async function openNativeReference(api, documentApi, link, sessionId, relative) {
+  const sessions = api.claude.sessions;
+  try {
+    const resolvedPath = await sessions.resolveFile(sessionId, relative.path);
+    const resolved = parseDestination(resolvedPath);
+    if (resolved && hasSupportedProjectSegment(resolved.path)) {
+      resolved.line = relative.line;
+      resolved.column = relative.column;
+      await openParsedAsset(api, documentApi, link, resolved);
+      return;
+    }
+  } catch {}
+
+  if (typeof sessions.getWorkspaceRoot !== "function") {
+    replayOriginalClick(link);
+    return;
+  }
+
+  let workspaceRoot;
+  try {
+    workspaceRoot = await sessions.getWorkspaceRoot(sessionId);
+  } catch {
+    replayOriginalClick(link);
+    return;
+  }
+  if (typeof workspaceRoot !== "string" || workspaceRoot === "") {
+    replayOriginalClick(link);
+    return;
+  }
+
+  try {
+    const result = await api.ipc.invoke("resolve-workspace-asset", {
+      workspaceRoot,
+      referencePath: relative.path,
+      line: relative.line,
+      column: relative.column,
+    });
+    handleOpenResult(result, documentApi, link);
+  } catch {
+    showNotice("Unity link handling failed.", documentApi);
+  }
+}
+
 function startRenderer(api, documentApi) {
   stopRenderer();
   const onClick = (event) => {
     if (!isEligibleClick(event)) return;
+    const nativeReference = event.target && event.target.closest
+      ? event.target.closest('span[role="button"]')
+      : null;
     const link = event.target && event.target.closest
       ? event.target.closest("a[href]")
         || event.target.closest('[data-file-reference="true"][data-prompt-link-href]')
+        || nativeReference
       : null;
     if (!link || replayBypass.has(link)) return;
-    const parsed = parseDestination(
-      link.getAttribute("href")
-        || link.getAttribute("data-prompt-link-href")
-        || link.href,
-    );
-    if (!parsed || !hasSupportedProjectSegment(parsed.path)) return;
+    const rawDestination = link.getAttribute?.("href")
+        || link.getAttribute?.("data-prompt-link-href")
+        || link.href
+        || (link === nativeReference ? nativeReference.querySelector?.("code")?.textContent : null);
+    const parsed = parseDestination(rawDestination);
+    if (parsed) {
+      if (!hasSupportedProjectSegment(parsed.path)) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openParsedAsset(api, documentApi, link, parsed);
+      return;
+    }
+
+    if (link !== nativeReference || typeof rawDestination !== "string") return;
+    const sessionId = parseClaudeSessionId(documentApi.location?.href);
+    const resolveFile = api.claude?.sessions?.resolveFile;
+    if (!sessionId || typeof resolveFile !== "function") return;
+    const relative = splitLineColumn(rawDestination.trim());
+    if (relative.path === "") return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    void api.ipc.invoke("open-asset", parsed)
-      .then((result) => {
-        if (!result || result.handled === false) {
-          replayOriginalClick(link);
-          return;
-        }
-        if (!result.ok) {
-          showNotice(
-            result.message || "Unity could not open this asset.",
-            documentApi,
-          );
-        }
-      })
-      .catch(() => {
-        showNotice("Unity link handling failed.", documentApi);
-      });
+    void openNativeReference(api, documentApi, link, sessionId, relative);
   };
   documentApi.addEventListener("click", onClick, true);
   rendererCleanup = () => documentApi.removeEventListener("click", onClick, true);
@@ -401,12 +581,14 @@ module.exports = {
   __test: {
     parseDestination,
     splitLineColumn,
+    parseClaudeSessionId,
     hasSupportedProjectSegment,
     isEligibleClick,
     normalizeProjectRoot,
     pipeNameForProjectRoot,
     hasReparsePointSegment,
     findUnityTarget,
+    resolveUnityWorkspaceReference,
     sendPipeRequest,
     handleOpenAsset,
     startMain,

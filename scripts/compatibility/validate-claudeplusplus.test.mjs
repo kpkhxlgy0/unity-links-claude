@@ -13,7 +13,7 @@ const source = readFileSync(resolve(tweakRoot, "index.js"), "utf8");
 
 function hostAdapter(overrides = {}) {
   return {
-    runtimeVersion: "0.2.1",
+    runtimeVersion: "0.2.2",
     validateTweakManifest: () => ({ ok: true, errors: [], warnings: [] }),
     evaluateRendererTweak(value, filename, api) {
       const module = { exports: {} };
@@ -73,8 +73,8 @@ test("validates renderer evaluation and Main lease cleanup through the Claude++ 
   });
 
   assert.deepEqual(result, {
-    runtimeVersion: "0.2.1",
-    tweakVersion: "0.1.0",
+    runtimeVersion: "0.2.2",
+    tweakVersion: "0.1.1",
   });
 });
 
@@ -102,8 +102,8 @@ test("rejects a Claude++ runtime outside the pinned compatibility baseline", asy
       manifest,
       source,
       tweakEntry: resolve(tweakRoot, "index.js"),
-      host: hostAdapter({ runtimeVersion: "0.2.2" }),
+      host: hostAdapter({ runtimeVersion: "0.2.1" }),
     }),
-    /runtime must be 0\.2\.1/,
+    /runtime must be 0\.2\.2/,
   );
 });
