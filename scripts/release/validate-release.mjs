@@ -28,6 +28,7 @@ const REQUIRED_FILES = [
   "scripts/compatibility/validate-claudeplusplus.test.mjs",
   "scripts/release/validate-release.mjs",
   "scripts/release/validate-release.test.mjs",
+  "scripts/send-open.js",
 ];
 const ALLOWED_FILES = new Set([
   ".gitignore",
@@ -38,6 +39,7 @@ const ALLOWED_FILES = new Set([
   "index.js",
   "manifest.json",
   "package.json",
+  "scripts/send-open.js",
 ]);
 const ALLOWED_PREFIXES = [
   ".github/",

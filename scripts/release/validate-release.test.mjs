@@ -58,6 +58,7 @@ function fixtureRoot() {
     "scripts/compatibility/validate-claudeplusplus.test.mjs",
     "scripts/release/validate-release.mjs",
     "scripts/release/validate-release.test.mjs",
+    "scripts/send-open.js",
   ]) {
     writeText(root, relativePath);
   }
@@ -142,6 +143,7 @@ test("rejects missing required distribution files", () => {
     ".github/workflows/ci.yml",
     ".github/workflows/release.yml",
     "scripts/compatibility/validate-claudeplusplus.mjs",
+    "scripts/send-open.js",
   ]) {
     const root = fixtureRoot();
     rmSync(join(root, relativePath));
