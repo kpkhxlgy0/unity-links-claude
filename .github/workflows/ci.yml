@@ -26,7 +26,7 @@ jobs:
 
       - name: Validate current release metadata
         shell: pwsh
-        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.0
+        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.1
 
       - name: Check diff formatting
         shell: pwsh
@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kpkhxlgy0/ClaudePlusPlus
-          ref: 6b7a0386cc351537f658c8a48fad1d25b6dd0385
+          ref: 9d4522e0bb5effd3722cca8a488bf0955e06ed0a
           path: .ci-tools/claude-plusplus
           persist-credentials: false
 
@@ -54,4 +54,3 @@ jobs:
           node --import ./.ci-tools/claude-plusplus/node_modules/tsx/dist/loader.mjs `
             ./scripts/compatibility/validate-claudeplusplus.mjs `
             ./.ci-tools/claude-plusplus .
-

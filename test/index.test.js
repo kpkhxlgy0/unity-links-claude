@@ -2,7 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
+const {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} = require("node:fs");
 const net = require("node:net");
+const os = require("node:os");
 const path = require("node:path");
 const { __test } = require("../index.js");
 
@@ -46,6 +53,52 @@ function createVirtualFs({ files = [], directories = [] }) {
   };
 }
 
+function createNativeReferenceClickFixture(text) {
+  const listeners = new Map();
+  const button = {
+    clicks: 0,
+    click() {
+      this.clicks += 1;
+    },
+    querySelector(selector) {
+      if (selector === "code") return { textContent: text };
+      return null;
+    },
+  };
+  const documentApi = {
+    location: {
+      href: "app://localhost/epitaxy/local-session-id",
+    },
+    body: { append() {} },
+    addEventListener(name, handler) {
+      listeners.set(name, handler);
+    },
+    removeEventListener() {},
+    createElement() {
+      return { dataset: {}, style: {}, remove() {} };
+    },
+  };
+  const event = {
+    button: 0,
+    defaultPrevented: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    target: {
+      closest(selector) {
+        if (selector === 'span[role="button"]') return button;
+        return null;
+      },
+    },
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopImmediatePropagation() {},
+  };
+  return { button, documentApi, event, listeners };
+}
+
 test("parses Windows paths with line and column", () => {
   assert.deepEqual(
     __test.parseDestination("D:/Projects/ExampleUnityProject/Assets/GameEntry.cs:12:4"),
@@ -71,6 +124,15 @@ test("parses file URLs emitted by Markdown renderers", () => {
 test("rejects web URLs and relative paths", () => {
   assert.equal(__test.parseDestination("https://example.com/Assets/a.prefab"), null);
   assert.equal(__test.parseDestination("Assets/a.prefab"), null);
+});
+
+test("extracts the Claude session id from an epitaxy route", () => {
+  assert.equal(
+    __test.parseClaudeSessionId("app://localhost/epitaxy/local_c13f9cc9-bd27-430f-afdc-5c03bdfa23b6"),
+    "local_c13f9cc9-bd27-430f-afdc-5c03bdfa23b6",
+  );
+  assert.equal(__test.parseClaudeSessionId("app://localhost/settings/general"), null);
+  assert.equal(__test.parseClaudeSessionId("https://example.com/epitaxy/session"), null);
 });
 
 test("recognizes supported Unity project folders only as complete segments", () => {
@@ -262,6 +324,66 @@ test("does not route a path through a Unity project-root junction", () => {
   assert.equal(result.code, "notAssetFile");
 });
 
+test("resolves unique Unity workspace references without Git metadata", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "claude-unity-workspace-"));
+  try {
+    mkdirSync(path.join(root, "Assets", "Scripts", "Deep"), { recursive: true });
+    mkdirSync(path.join(root, "ProjectSettings"), { recursive: true });
+    mkdirSync(path.join(root, "Packages"), { recursive: true });
+    writeFileSync(path.join(root, "ProjectSettings", "ProjectVersion.txt"), "m_EditorVersion: test\n");
+    for (const relativePath of [
+      "Assets/Scripts/Deep/GameEntry.cs",
+      "Assets/Light.prefab",
+      "Assets/Battle_00001_Test.unity",
+    ]) {
+      const target = path.join(root, ...relativePath.split("/"));
+      writeFileSync(target, "fixture\n");
+      assert.equal(
+        await __test.resolveUnityWorkspaceReference(root, path.basename(target), require("node:fs"), path),
+        target,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("does not choose between duplicate Unity workspace filenames", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "claude-unity-workspace-"));
+  try {
+    mkdirSync(path.join(root, "Assets", "A"), { recursive: true });
+    mkdirSync(path.join(root, "Assets", "B"), { recursive: true });
+    mkdirSync(path.join(root, "ProjectSettings"), { recursive: true });
+    writeFileSync(path.join(root, "ProjectSettings", "ProjectVersion.txt"), "m_EditorVersion: test\n");
+    writeFileSync(path.join(root, "Assets", "A", "Duplicate.prefab"), "a\n");
+    writeFileSync(path.join(root, "Assets", "B", "Duplicate.prefab"), "b\n");
+
+    assert.equal(
+      await __test.resolveUnityWorkspaceReference(root, "Duplicate.prefab", require("node:fs"), path),
+      null,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("does not match a partial Unity workspace filename suffix", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "claude-unity-workspace-"));
+  try {
+    mkdirSync(path.join(root, "Assets"), { recursive: true });
+    mkdirSync(path.join(root, "ProjectSettings"), { recursive: true });
+    writeFileSync(path.join(root, "ProjectSettings", "ProjectVersion.txt"), "m_EditorVersion: test\n");
+    writeFileSync(path.join(root, "Assets", "NotGameEntry.cs"), "fixture\n");
+
+    assert.equal(
+      await __test.resolveUnityWorkspaceReference(root, "GameEntry.cs", require("node:fs"), path),
+      null,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("round trips one newline-delimited request over a Windows Pipe", async () => {
   const pipeName = "kpk-codex-unity-link-test-" + process.pid + "-" + Date.now();
   const pipePath = "\\\\.\\pipe\\" + pipeName;
@@ -324,7 +446,7 @@ test("gracefully closes the Pipe after a successful response", async () => {
   assert.equal(destroyed, false);
 });
 
-test("registers one Main IPC handler for every Claude++ API lease", () => {
+test("registers the two focused Main IPC handlers for every Claude++ API lease", () => {
   const key = Symbol.for("com.kpk.unity-asset-links.main-runtime");
   delete globalThis[key];
   let firstRegistrations = 0;
@@ -347,8 +469,8 @@ test("registers one Main IPC handler for every Claude++ API lease", () => {
   __test.startMain(firstApi, {});
   __test.startMain(secondApi, {});
 
-  assert.equal(firstRegistrations, 1);
-  assert.equal(secondRegistrations, 1);
+  assert.equal(firstRegistrations, 2);
+  assert.equal(secondRegistrations, 2);
   delete globalThis[key];
 });
 
@@ -492,6 +614,229 @@ test("renderer captures Claude file-reference buttons", async () => {
     line: 0,
     column: 0,
   }]);
+  __test.stopRenderer();
+});
+
+test("renderer captures current Claude code file-reference buttons", async () => {
+  const listeners = new Map();
+  const code = {
+    textContent: "D:\\Projects\\ExampleUnityProject\\Assets\\Light.prefab:12",
+  };
+  const button = {
+    querySelector(selector) {
+      if (selector === "code") return code;
+      return null;
+    },
+  };
+  const documentApi = {
+    body: { append() {} },
+    addEventListener(name, handler) {
+      listeners.set(name, handler);
+    },
+    removeEventListener() {},
+    createElement() {
+      return { dataset: {}, style: {}, remove() {} };
+    },
+  };
+  const opened = [];
+  __test.startRenderer(
+    {
+      ipc: {
+        invoke: async (_channel, destination) => {
+          opened.push(destination);
+          return { ok: true, handled: true, code: "opened" };
+        },
+      },
+    },
+    documentApi,
+  );
+  const event = {
+    button: 0,
+    defaultPrevented: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    target: {
+      closest(selector) {
+        if (selector === 'span[role="button"]') return button;
+        return null;
+      },
+    },
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopImmediatePropagation() {},
+  };
+
+  listeners.get("click")(event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(opened, [{
+    path: "D:\\Projects\\ExampleUnityProject\\Assets\\Light.prefab",
+    line: 12,
+    column: 0,
+  }]);
+  __test.stopRenderer();
+});
+
+test("renderer leaves relative current Claude code references unchanged", async () => {
+  const listeners = new Map();
+  const button = {
+    querySelector() {
+      return { textContent: "Assets/Light.prefab" };
+    },
+  };
+  const documentApi = {
+    body: { append() {} },
+    addEventListener(name, handler) {
+      listeners.set(name, handler);
+    },
+    removeEventListener() {},
+    createElement() {
+      return { dataset: {}, style: {}, remove() {} };
+    },
+  };
+  let invokeCount = 0;
+  __test.startRenderer(
+    { ipc: { invoke: async () => { invokeCount += 1; } } },
+    documentApi,
+  );
+  const event = {
+    button: 0,
+    defaultPrevented: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    target: {
+      closest(selector) {
+        if (selector === 'span[role="button"]') return button;
+        return null;
+      },
+    },
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopImmediatePropagation() {},
+  };
+
+  listeners.get("click")(event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(invokeCount, 0);
+  __test.stopRenderer();
+});
+
+test("renderer resolves native Claude file references through the current session", async () => {
+  for (const item of [
+    {
+      text: "GameEntry.cs:7",
+      resolved: "D:\\workspace\\sgproj\\Assets\\GameEntry.cs",
+      line: 7,
+    },
+    {
+      text: "Waiting.prefab",
+      resolved: "D:\\workspace\\sgproj\\Assets\\Waiting.prefab",
+      line: 0,
+    },
+    {
+      text: "GameEntry.unity",
+      resolved: "D:\\workspace\\sgproj\\Assets\\GameEntry.unity",
+      line: 0,
+    },
+  ]) {
+    const fixture = createNativeReferenceClickFixture(item.text);
+    const resolved = [];
+    const opened = [];
+    __test.startRenderer(
+      {
+        claude: {
+          sessions: {
+            resolveFile: async (sessionId, filePath) => {
+              resolved.push([sessionId, filePath]);
+              return item.resolved;
+            },
+          },
+        },
+        ipc: {
+          invoke: async (_channel, destination) => {
+            opened.push(destination);
+            return { ok: true, handled: true, code: "opened" };
+          },
+        },
+      },
+      fixture.documentApi,
+    );
+
+    fixture.listeners.get("click")(fixture.event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(fixture.event.defaultPrevented, true);
+    assert.deepEqual(resolved, [["local-session-id", item.text.replace(/:\d+$/, "")]]);
+    assert.deepEqual(opened, [{
+      path: item.resolved,
+      line: item.line,
+      column: 0,
+    }]);
+    assert.equal(fixture.button.clicks, 0);
+    __test.stopRenderer();
+  }
+});
+
+test("renderer falls back to the session workspace when Claude cannot resolve a native reference", async () => {
+  const fixture = createNativeReferenceClickFixture("SSAILogicComponent.cs:9");
+  const invoked = [];
+  __test.startRenderer(
+    {
+      log: { info() {}, warn() {} },
+      claude: {
+        sessions: {
+          resolveFile: async () => null,
+          getWorkspaceRoot: async () => "D:\\workspace\\sgproj",
+        },
+      },
+      ipc: {
+        invoke: async (channel, request) => {
+          invoked.push([channel, request]);
+          return { ok: true, handled: true, code: "opened" };
+        },
+      },
+    },
+    fixture.documentApi,
+  );
+
+  fixture.listeners.get("click")(fixture.event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(fixture.event.defaultPrevented, true);
+  assert.deepEqual(invoked, [["resolve-workspace-asset", {
+    workspaceRoot: "D:\\workspace\\sgproj",
+    referencePath: "SSAILogicComponent.cs",
+    line: 9,
+    column: 0,
+  }]]);
+  assert.equal(fixture.button.clicks, 0);
+  __test.stopRenderer();
+});
+
+test("renderer replays Claude's native reference when session resolution fails", async () => {
+  const fixture = createNativeReferenceClickFixture("Missing.prefab");
+  __test.startRenderer(
+    {
+      claude: { sessions: { resolveFile: async () => null } },
+      ipc: { invoke: async () => assert.fail("unresolved paths must not reach Main") },
+    },
+    fixture.documentApi,
+  );
+
+  fixture.listeners.get("click")(fixture.event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(fixture.event.defaultPrevented, true);
+  assert.equal(fixture.button.clicks, 1);
   __test.stopRenderer();
 });
 

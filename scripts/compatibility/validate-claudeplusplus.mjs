@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_RUNTIME_VERSION = "0.2.1";
+const EXPECTED_RUNTIME_VERSION = "0.2.2";
 const EXPECTED_CHANNEL = "claudepp:com.kpk.unity-asset-links:open-asset";
 
 function silentLog() {

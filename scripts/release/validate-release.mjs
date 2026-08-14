@@ -7,10 +7,10 @@ const EXPECTED_ID = "com.kpk.unity-asset-links";
 const EXPECTED_REPOSITORY = "kpkhxlgy0/unity-links-claude";
 const EXPECTED_ICON =
   "https://raw.githubusercontent.com/kpkhxlgy0/unity-links-claude/master/icon.png";
-const EXPECTED_MIN_RUNTIME = "0.2.1";
+const EXPECTED_MIN_RUNTIME = "0.2.2";
 const EXPECTED_SCOPE = "both";
 const EXPECTED_MAIN = "index.js";
-const EXPECTED_PERMISSIONS = ["ipc", "filesystem"];
+const EXPECTED_PERMISSIONS = ["ipc", "filesystem", "claude-sessions"];
 const EXPECTED_COPYRIGHT = "Copyright (c) 2026 KPK";
 const REQUIRED_FILES = [
   ".gitignore",
@@ -47,7 +47,7 @@ const ALLOWED_PREFIXES = [
   "scripts/release/",
   "test/",
 ];
-const IGNORED_DIRECTORIES = new Set([".git", ".ci-tools", ".release-tools", "node_modules"]);
+const IGNORED_ENTRIES = new Set([".git", ".ci-tools", ".release-tools", "node_modules"]);
 
 function readJson(repositoryRoot, relativePath, errors) {
   try {
@@ -62,7 +62,7 @@ function listDistributionFiles(repositoryRoot) {
   const files = [];
   const visit = (directory, relativeDirectory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
+      if (IGNORED_ENTRIES.has(entry.name)) continue;
       const relativePath = relativeDirectory
         ? `${relativeDirectory}/${entry.name}`
         : entry.name;
