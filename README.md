@@ -75,7 +75,7 @@ Run the standalone tests:
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.1
+node .\scripts\release\validate-release.mjs $PWD 0.1.2
 ```
 
 Validate against the pinned Claude++ v0.2.2 source checkout:

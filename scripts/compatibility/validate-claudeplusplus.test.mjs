@@ -74,7 +74,7 @@ test("validates renderer evaluation and Main lease cleanup through the Claude++ 
 
   assert.deepEqual(result, {
     runtimeVersion: "0.2.2",
-    tweakVersion: "0.1.1",
+    tweakVersion: "0.1.2",
   });
 });
 

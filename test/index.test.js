@@ -740,17 +740,17 @@ test("renderer resolves native Claude file references through the current sessio
   for (const item of [
     {
       text: "GameEntry.cs:7",
-      resolved: "D:\\workspace\\sgproj\\Assets\\GameEntry.cs",
+      resolved: "D:\\Projects\\ExampleUnityProject\\Assets\\GameEntry.cs",
       line: 7,
     },
     {
       text: "Waiting.prefab",
-      resolved: "D:\\workspace\\sgproj\\Assets\\Waiting.prefab",
+      resolved: "D:\\Projects\\ExampleUnityProject\\Assets\\Waiting.prefab",
       line: 0,
     },
     {
       text: "GameEntry.unity",
-      resolved: "D:\\workspace\\sgproj\\Assets\\GameEntry.unity",
+      resolved: "D:\\Projects\\ExampleUnityProject\\Assets\\GameEntry.unity",
       line: 0,
     },
   ]) {
@@ -801,7 +801,7 @@ test("renderer falls back to the session workspace when Claude cannot resolve a 
       claude: {
         sessions: {
           resolveFile: async () => null,
-          getWorkspaceRoot: async () => "D:\\workspace\\sgproj",
+          getWorkspaceRoot: async () => "D:\\Projects\\ExampleUnityProject",
         },
       },
       ipc: {
@@ -819,7 +819,7 @@ test("renderer falls back to the session workspace when Claude cannot resolve a 
 
   assert.equal(fixture.event.defaultPrevented, true);
   assert.deepEqual(invoked, [["resolve-workspace-asset", {
-    workspaceRoot: "D:\\workspace\\sgproj",
+    workspaceRoot: "D:\\Projects\\ExampleUnityProject",
     referencePath: "SSAILogicComponent.cs",
     line: 9,
     column: 0,

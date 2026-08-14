@@ -26,7 +26,7 @@ jobs:
 
       - name: Validate current release metadata
         shell: pwsh
-        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.1
+        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.2
 
       - name: Check diff formatting
         shell: pwsh
