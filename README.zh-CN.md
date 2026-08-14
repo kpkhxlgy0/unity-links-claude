@@ -71,7 +71,7 @@ Unity 进程。
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.1
+node .\scripts\release\validate-release.mjs $PWD 0.1.2
 ```
 
 使用固定的 Claude++ v0.2.2 源码 checkout 验证：
