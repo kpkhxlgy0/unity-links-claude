@@ -5,7 +5,7 @@ const { EventEmitter } = require("node:events");
 const {
   mkdtempSync,
   mkdirSync,
-  realpathSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } = require("node:fs");
@@ -338,11 +338,16 @@ test("resolves unique Unity workspace references without Git metadata", async ()
       "Assets/Battle_00001_Test.unity",
     ]) {
       const target = path.join(root, ...relativePath.split("/"));
-      writeFileSync(target, "fixture\n");
-      assert.equal(
-        await __test.resolveUnityWorkspaceReference(root, path.basename(target), require("node:fs"), path),
-        realpathSync(target),
+      const contents = `fixture:${relativePath}\n`;
+      writeFileSync(target, contents);
+      const resolved = await __test.resolveUnityWorkspaceReference(
+        root,
+        path.basename(target),
+        require("node:fs"),
+        path,
       );
+      assert.notEqual(resolved, null);
+      assert.equal(readFileSync(resolved, "utf8"), contents);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
