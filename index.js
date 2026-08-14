@@ -292,22 +292,11 @@ function defaultMainDeps(api) {
 }
 
 function startMain(api, injectedDeps) {
-  const key = Symbol.for("com.kpk.unity-asset-links.main-runtime");
-  const runtime = globalThis[key] || {
-    registered: false,
-    implementation: undefined,
-  };
-  globalThis[key] = runtime;
-  runtime.implementation = (candidate) =>
+  api.ipc.handle("open-asset", (candidate) =>
     handleOpenAsset(
       candidate,
       Object.keys(injectedDeps || {}).length > 0 ? injectedDeps : defaultMainDeps(api),
-    );
-
-  if (!runtime.registered) {
-    api.ipc.handle("open-asset", (candidate) => runtime.implementation(candidate));
-    runtime.registered = true;
-  }
+    ));
 }
 
 function showNotice(message, documentApi) {

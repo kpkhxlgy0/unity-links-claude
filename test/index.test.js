@@ -324,20 +324,31 @@ test("gracefully closes the Pipe after a successful response", async () => {
   assert.equal(destroyed, false);
 });
 
-test("registers the main IPC handler only once across hot reloads", () => {
+test("registers one Main IPC handler for every Claude++ API lease", () => {
   const key = Symbol.for("com.kpk.unity-asset-links.main-runtime");
   delete globalThis[key];
-  let registrations = 0;
-  const api = {
+  let firstRegistrations = 0;
+  let secondRegistrations = 0;
+  const firstApi = {
     ipc: {
       handle() {
-        registrations += 1;
+        firstRegistrations += 1;
       },
     },
   };
-  __test.startMain(api, {});
-  __test.startMain(api, {});
-  assert.equal(registrations, 1);
+  const secondApi = {
+    ipc: {
+      handle() {
+        secondRegistrations += 1;
+      },
+    },
+  };
+
+  __test.startMain(firstApi, {});
+  __test.startMain(secondApi, {});
+
+  assert.equal(firstRegistrations, 1);
+  assert.equal(secondRegistrations, 1);
   delete globalThis[key];
 });
 
