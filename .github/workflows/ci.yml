@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tweak
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Run tweak tests
+        shell: pwsh
+        run: npm test
+
+      - name: Validate current release metadata
+        shell: pwsh
+        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.0
+
+      - name: Check diff formatting
+        shell: pwsh
+        run: git diff --check
+
+      - name: Check out pinned Claude++
+        uses: actions/checkout@v6
+        with:
+          repository: kpkhxlgy0/ClaudePlusPlus
+          ref: 6b7a0386cc351537f658c8a48fad1d25b6dd0385
+          path: .ci-tools/claude-plusplus
+          persist-credentials: false
+
+      - name: Build Claude++ SDK and Runtime
+        shell: pwsh
+        working-directory: .ci-tools/claude-plusplus
+        run: |
+          npm ci --ignore-scripts
+          npm run build --workspace @claude-plusplus/sdk
+          npm run build --workspace @claude-plusplus/runtime
+
+      - name: Validate tweak with Claude++
+        shell: pwsh
+        run: |
+          node --import ./.ci-tools/claude-plusplus/node_modules/tsx/dist/loader.mjs `
+            ./scripts/compatibility/validate-claudeplusplus.mjs `
+            ./.ci-tools/claude-plusplus .
+

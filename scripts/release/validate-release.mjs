@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,40 @@ const EXPECTED_SCOPE = "both";
 const EXPECTED_MAIN = "index.js";
 const EXPECTED_PERMISSIONS = ["ipc", "filesystem"];
 const EXPECTED_COPYRIGHT = "Copyright (c) 2026 KPK";
+const REQUIRED_FILES = [
+  ".gitignore",
+  ".github/workflows/ci.yml",
+  ".github/workflows/release.yml",
+  "LICENSE",
+  "README.md",
+  "README.zh-CN.md",
+  "icon.png",
+  "index.js",
+  "manifest.json",
+  "package.json",
+  "test/index.test.js",
+  "scripts/compatibility/validate-claudeplusplus.mjs",
+  "scripts/compatibility/validate-claudeplusplus.test.mjs",
+  "scripts/release/validate-release.mjs",
+  "scripts/release/validate-release.test.mjs",
+];
+const ALLOWED_FILES = new Set([
+  ".gitignore",
+  "LICENSE",
+  "README.md",
+  "README.zh-CN.md",
+  "icon.png",
+  "index.js",
+  "manifest.json",
+  "package.json",
+]);
+const ALLOWED_PREFIXES = [
+  ".github/",
+  "scripts/compatibility/",
+  "scripts/release/",
+  "test/",
+];
+const IGNORED_DIRECTORIES = new Set([".git", ".ci-tools", ".release-tools", "node_modules"]);
 
 function readJson(repositoryRoot, relativePath, errors) {
   try {
@@ -20,6 +54,28 @@ function readJson(repositoryRoot, relativePath, errors) {
     errors.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
+}
+
+function listDistributionFiles(repositoryRoot) {
+  const files = [];
+  const visit = (directory, relativeDirectory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
+      const relativePath = relativeDirectory
+        ? `${relativeDirectory}/${entry.name}`
+        : entry.name;
+      const absolutePath = resolve(directory, entry.name);
+      if (entry.isDirectory()) visit(absolutePath, relativePath);
+      else files.push(relativePath);
+    }
+  };
+  visit(repositoryRoot, "");
+  return files.sort();
+}
+
+function isAllowedDistributionFile(relativePath) {
+  return ALLOWED_FILES.has(relativePath)
+    || ALLOWED_PREFIXES.some((prefix) => relativePath.startsWith(prefix));
 }
 
 export function validateRelease(repositoryRoot, requestedVersion) {
@@ -75,6 +131,21 @@ export function validateRelease(repositoryRoot, requestedVersion) {
     if (!license.includes(EXPECTED_COPYRIGHT)) errors.push(`LICENSE: ${EXPECTED_COPYRIGHT} is missing`);
   } catch (error) {
     errors.push(`LICENSE: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  for (const relativePath of REQUIRED_FILES) {
+    if (!existsSync(resolve(repositoryRoot, relativePath))) {
+      errors.push(`${relativePath}: required distribution file is missing`);
+    }
+  }
+  try {
+    for (const relativePath of listDistributionFiles(repositoryRoot)) {
+      if (!isAllowedDistributionFile(relativePath)) {
+        errors.push(`${relativePath}: file is outside the public distribution allowlist`);
+      }
+    }
+  } catch (error) {
+    errors.push(`distribution: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   if (errors.length > 0) throw new Error(errors.join("\n"));

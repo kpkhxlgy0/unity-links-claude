@@ -13,6 +13,12 @@ function writeJson(root, relativePath, value) {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function writeText(root, relativePath, value = "fixture\n") {
+  const target = join(root, relativePath);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, value);
+}
+
 function fixtureRoot() {
   const root = mkdtempSync(join(tmpdir(), "unity-links-claude-release-"));
   fixtureRoots.push(root);
@@ -40,6 +46,21 @@ function fixtureRoot() {
   });
   writeFileSync(join(root, "icon.png"), "test-icon");
   writeFileSync(join(root, "LICENSE"), "MIT License\n\nCopyright (c) 2026 KPK\n");
+  for (const relativePath of [
+    ".gitignore",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "index.js",
+    "test/index.test.js",
+    "scripts/compatibility/validate-claudeplusplus.mjs",
+    "scripts/compatibility/validate-claudeplusplus.test.mjs",
+    "scripts/release/validate-release.mjs",
+    "scripts/release/validate-release.test.mjs",
+  ]) {
+    writeText(root, relativePath);
+  }
   return root;
 }
 
@@ -111,4 +132,25 @@ test("rejects missing or incorrect MIT metadata", () => {
   const wrongLicense = fixtureRoot();
   updateJson(wrongLicense, "package.json", { license: "Apache-2.0" });
   assert.throws(() => validateRelease(wrongLicense, "0.1.0"), /license must be MIT/);
+});
+
+test("rejects missing required distribution files", () => {
+  for (const relativePath of [
+    "index.js",
+    "README.md",
+    "README.zh-CN.md",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "scripts/compatibility/validate-claudeplusplus.mjs",
+  ]) {
+    const root = fixtureRoot();
+    rmSync(join(root, relativePath));
+    assert.throws(() => validateRelease(root, "0.1.0"), new RegExp(relativePath.replace(".", "\\.")));
+  }
+});
+
+test("rejects files outside the public distribution allowlist", () => {
+  const root = fixtureRoot();
+  writeText(root, "private-notes.txt");
+  assert.throws(() => validateRelease(root, "0.1.0"), /private-notes\.txt/);
 });

@@ -1,0 +1,126 @@
+name: Release
+run-name: Release v${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version without the v prefix
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out tweak
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Require master
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -ne "refs/heads/master") {
+            throw "Release workflow must run from master."
+          }
+
+      - name: Validate release metadata
+        shell: pwsh
+        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE $env:RELEASE_VERSION
+
+      - name: Run tweak tests
+        shell: pwsh
+        run: npm test
+
+      - name: Check diff formatting
+        shell: pwsh
+        run: git diff --check
+
+      - name: Check out pinned Claude++
+        uses: actions/checkout@v6
+        with:
+          repository: kpkhxlgy0/ClaudePlusPlus
+          ref: 6b7a0386cc351537f658c8a48fad1d25b6dd0385
+          path: .release-tools/claude-plusplus
+          persist-credentials: false
+
+      - name: Build Claude++ SDK and Runtime
+        shell: pwsh
+        working-directory: .release-tools/claude-plusplus
+        run: |
+          npm ci --ignore-scripts
+          npm run build --workspace @claude-plusplus/sdk
+          npm run build --workspace @claude-plusplus/runtime
+
+      - name: Validate tweak with Claude++
+        shell: pwsh
+        run: |
+          node --import ./.release-tools/claude-plusplus/node_modules/tsx/dist/loader.mjs `
+            ./scripts/compatibility/validate-claudeplusplus.mjs `
+            ./.release-tools/claude-plusplus .
+
+      - name: Create or reuse release tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          $tag = "v$env:RELEASE_VERSION"
+          git fetch --tags origin
+          $existing = git tag --list $tag
+          if ($existing)
+          {
+              $target = (git rev-list -n 1 $tag).Trim()
+              if ($target -ne $env:GITHUB_SHA)
+              {
+                  throw "Tag $tag points to $target instead of $env:GITHUB_SHA."
+              }
+          }
+          else
+          {
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag -a $tag $env:GITHUB_SHA -m "Unity Links Claude Tweak $tag"
+              git push origin "refs/tags/$tag"
+          }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Create Draft Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          $existingReleaseTag = gh release list `
+              --repo $env:GITHUB_REPOSITORY `
+              --limit 100 `
+              --json tagName `
+              --jq ".[] | select(.tagName == `"$env:RELEASE_TAG`") | .tagName"
+          if ($existingReleaseTag)
+          {
+              throw "Release already exists for tag: $existingReleaseTag"
+          }
+
+          $releaseUrl = gh release create $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --verify-tag `
+              --draft `
+              --title "Unity Links Claude Tweak $env:RELEASE_TAG" `
+              --notes "Windows-only Claude++ tweak. Licensed under the MIT License." `
+              --generate-notes
+          "Draft Release: $releaseUrl" >> $env:GITHUB_STEP_SUMMARY
