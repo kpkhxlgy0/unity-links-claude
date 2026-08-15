@@ -12,7 +12,7 @@ the junction management scripts.
 ## Requirements
 
 - Windows 10 or newer.
-- Claude Code Desktop with [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.2 or newer installed.
+- Claude Code Desktop with [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.3 or newer installed.
 - The Unity Asset Links package installed in each Unity project that should receive links.
 - The umbrella `unity-links` repository for the supported junction and Unity Package installation commands.
 
@@ -75,10 +75,10 @@ Run the standalone tests:
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.2
+node .\scripts\release\validate-release.mjs $PWD 0.1.3
 ```
 
-Validate against the pinned Claude++ v0.2.2 source checkout:
+Validate against the pinned Claude++ v0.2.3 source checkout:
 
 ```powershell
 node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
@@ -92,7 +92,7 @@ evaluated without Node `require`, and disposed Main leases must remove their nam
 ## Release Process
 
 The manual `Release` workflow accepts a stable version without the `v` prefix. It requires `master`, runs all tests,
-validates the public distribution, verifies Claude++ v0.2.2 compatibility, creates or reuses the matching tag, and
+validates the public distribution, verifies Claude++ v0.2.3 compatibility, creates or reuses the matching tag, and
 creates a Draft Release for review. It does not publish to the Claude++ Tweak Store.
 
 ## License

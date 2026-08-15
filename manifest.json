@@ -1,14 +1,14 @@
 {
   "id": "com.kpk.unity-asset-links",
   "name": "Unity Asset Links",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "githubRepo": "kpkhxlgy0/unity-links-claude",
   "homepage": "https://github.com/kpkhxlgy0/unity-links",
-  "iconUrl": "https://raw.githubusercontent.com/kpkhxlgy0/unity-links-claude/master/icon.png",
+  "iconUrl": "./icon.png",
   "description": "Open Claude links under Assets, ProjectSettings, or Packages in the matching Unity Editor.",
   "author": "KPK",
   "tags": ["unity", "links", "workflow"],
-  "minRuntime": "0.2.2",
+  "minRuntime": "0.2.3",
   "scope": "both",
   "main": "index.js",
   "permissions": ["ipc", "filesystem", "claude-sessions"]

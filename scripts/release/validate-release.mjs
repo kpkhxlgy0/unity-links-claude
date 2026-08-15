@@ -5,9 +5,8 @@ import { fileURLToPath } from "node:url";
 const STABLE_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 const EXPECTED_ID = "com.kpk.unity-asset-links";
 const EXPECTED_REPOSITORY = "kpkhxlgy0/unity-links-claude";
-const EXPECTED_ICON =
-  "https://raw.githubusercontent.com/kpkhxlgy0/unity-links-claude/master/icon.png";
-const EXPECTED_MIN_RUNTIME = "0.2.2";
+const EXPECTED_ICON = "./icon.png";
+const EXPECTED_MIN_RUNTIME = "0.2.3";
 const EXPECTED_SCOPE = "both";
 const EXPECTED_MAIN = "index.js";
 const EXPECTED_PERMISSIONS = ["ipc", "filesystem", "claude-sessions"];

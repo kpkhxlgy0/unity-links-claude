@@ -11,7 +11,7 @@
 ## 环境要求
 
 - Windows 10 或更新版本。
-- 已安装 Claude Code Desktop 和 [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.2 或更新版本。
+- 已安装 Claude Code Desktop 和 [Claude++](https://github.com/kpkhxlgy0/ClaudePlusPlus) v0.2.3 或更新版本。
 - 每个需要接收链接的 Unity 项目都已安装 Unity Asset Links package。
 - 使用 `unity-links` 总仓库提供的 junction 和 Unity Package 安装命令。
 
@@ -71,10 +71,10 @@ Unity 进程。
 
 ```powershell
 npm test
-node .\scripts\release\validate-release.mjs $PWD 0.1.2
+node .\scripts\release\validate-release.mjs $PWD 0.1.3
 ```
 
-使用固定的 Claude++ v0.2.2 源码 checkout 验证：
+使用固定的 Claude++ v0.2.3 源码 checkout 验证：
 
 ```powershell
 node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
@@ -88,7 +88,7 @@ node --import file:///D:/Unity/ClaudePlusPlus/node_modules/tsx/dist/loader.mjs `
 ## 发布流程
 
 手动 `Release` workflow 接受不带 `v` 的稳定版本。它要求从 `master` 运行，执行全部测试、校验公开分发文件、
-验证 Claude++ v0.2.2 兼容性、创建或复用对应 tag，最后生成供审核的 Draft Release。它不会发布到 Claude++
+验证 Claude++ v0.2.3 兼容性、创建或复用对应 tag，最后生成供审核的 Draft Release。它不会发布到 Claude++
 Tweak Store。
 
 ## 开源协议

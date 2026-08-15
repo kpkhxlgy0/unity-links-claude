@@ -54,8 +54,14 @@ function createVirtualFs({ files = [], directories = [] }) {
   };
 }
 
-function createNativeReferenceClickFixture(text) {
+function createNativeReferenceClickFixture(
+  text,
+  entryId = null,
+  matchingReferenceCount = 1,
+  referenceOccurrence = 0,
+) {
   const listeners = new Map();
+  let entry;
   const button = {
     clicks: 0,
     click() {
@@ -64,6 +70,24 @@ function createNativeReferenceClickFixture(text) {
     querySelector(selector) {
       if (selector === "code") return { textContent: text };
       return null;
+    },
+    closest(selector) {
+      if (selector !== "[data-epitaxy-entry]" || entryId === null) return null;
+      return entry;
+    },
+  };
+  const matchingReferences = Array.from({ length: matchingReferenceCount }, () => ({
+    querySelector(selector) {
+      return selector === "code" ? { textContent: text } : null;
+    },
+  }));
+  matchingReferences[referenceOccurrence] = button;
+  entry = {
+    getAttribute(name) {
+      return name === "data-epitaxy-entry" ? entryId : null;
+    },
+    querySelectorAll(selector) {
+      return selector === 'span[role="button"]' ? matchingReferences : [];
     },
   };
   const documentApi = {
@@ -118,6 +142,19 @@ test("parses file URLs emitted by Markdown renderers", () => {
       path: "D:\\Projects\\ExampleUnityProject\\Assets\\Light.prefab",
       line: 0,
       column: 0,
+    },
+  );
+});
+
+test("preserves line and column fragments from Markdown file URLs", () => {
+  assert.deepEqual(
+    __test.parseDestination(
+      "file:///D:/Projects/ExampleUnityProject/Assets/GameEntry.cs#L54C7",
+    ),
+    {
+      path: "D:\\Projects\\ExampleUnityProject\\Assets\\GameEntry.cs",
+      line: 54,
+      column: 7,
     },
   );
 });
@@ -754,13 +791,18 @@ test("renderer resolves native Claude file references through the current sessio
       line: 0,
     },
   ]) {
-    const fixture = createNativeReferenceClickFixture(item.text);
+    const fixture = createNativeReferenceClickFixture(item.text, "resp-file-links");
+    const recovered = [];
     const resolved = [];
     const opened = [];
     __test.startRenderer(
       {
         claude: {
           sessions: {
+            resolveReference: async (sessionId, entryId, label, occurrence, visibleCount) => {
+              recovered.push([sessionId, entryId, label, occurrence, visibleCount]);
+              return null;
+            },
             resolveFile: async (sessionId, filePath) => {
               resolved.push([sessionId, filePath]);
               return item.resolved;
@@ -781,6 +823,13 @@ test("renderer resolves native Claude file references through the current sessio
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(fixture.event.defaultPrevented, true);
+    assert.deepEqual(recovered, [[
+      "local-session-id",
+      "resp-file-links",
+      item.text.replace(/:\d+$/, ""),
+      0,
+      1,
+    ]]);
     assert.deepEqual(resolved, [["local-session-id", item.text.replace(/:\d+$/, "")]]);
     assert.deepEqual(opened, [{
       path: item.resolved,
@@ -792,14 +841,97 @@ test("renderer resolves native Claude file references through the current sessio
   }
 });
 
+test("renderer recovers a native Claude reference's original file URL and line", async () => {
+  const fixture = createNativeReferenceClickFixture("SSAILogicComponent.cs", "resp-file-links");
+  const recovered = [];
+  const opened = [];
+  __test.startRenderer(
+    {
+      claude: {
+        sessions: {
+          resolveReference: async (sessionId, entryId, label, occurrence, visibleCount) => {
+            recovered.push([sessionId, entryId, label, occurrence, visibleCount]);
+            return "file:///D:/Projects/ExampleUnityProject/Assets/SSAILogicComponent.cs#L54";
+          },
+          resolveFile: async () => assert.fail("the recovered destination must be preferred"),
+        },
+      },
+      ipc: {
+        invoke: async (_channel, destination) => {
+          opened.push(destination);
+          return { ok: true, handled: true, code: "opened" };
+        },
+      },
+    },
+    fixture.documentApi,
+  );
+
+  fixture.listeners.get("click")(fixture.event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(fixture.event.defaultPrevented, true);
+  assert.deepEqual(recovered, [[
+    "local-session-id",
+    "resp-file-links",
+    "SSAILogicComponent.cs",
+    0,
+    1,
+  ]]);
+  assert.deepEqual(opened, [{
+    path: "D:\\Projects\\ExampleUnityProject\\Assets\\SSAILogicComponent.cs",
+    line: 54,
+    column: 0,
+  }]);
+  assert.equal(fixture.button.clicks, 0);
+  __test.stopRenderer();
+});
+
+test("renderer selects an unnumbered duplicate prefab reference by visible occurrence", async () => {
+  const fixture = createNativeReferenceClickFixture("Boss.prefab", "resp-file-links", 2, 1);
+  const opened = [];
+  __test.startRenderer(
+    {
+      claude: {
+        sessions: {
+          resolveReference: async (_sessionId, _entryId, _label, occurrence, visibleCount) => {
+            assert.equal(occurrence, 1);
+            assert.equal(visibleCount, 2);
+            return "file:///D:/Projects/ExampleUnityProject/Assets/Prefabs/Boss.prefab";
+          },
+          resolveFile: async () => assert.fail("the selected transcript reference must be preferred"),
+        },
+      },
+      ipc: {
+        invoke: async (_channel, destination) => {
+          opened.push(destination);
+          return { ok: true, handled: true, code: "opened" };
+        },
+      },
+    },
+    fixture.documentApi,
+  );
+
+  fixture.listeners.get("click")(fixture.event);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [{
+    path: "D:\\Projects\\ExampleUnityProject\\Assets\\Prefabs\\Boss.prefab",
+    line: 0,
+    column: 0,
+  }]);
+  assert.equal(fixture.button.clicks, 0);
+  __test.stopRenderer();
+});
+
 test("renderer falls back to the session workspace when Claude cannot resolve a native reference", async () => {
-  const fixture = createNativeReferenceClickFixture("SSAILogicComponent.cs:9");
+  const fixture = createNativeReferenceClickFixture("SSAILogicComponent.cs:9", "resp-file-links");
   const invoked = [];
   __test.startRenderer(
     {
       log: { info() {}, warn() {} },
       claude: {
         sessions: {
+          resolveReference: async () => { throw new Error("transcript unavailable"); },
           resolveFile: async () => null,
           getWorkspaceRoot: async () => "D:\\Projects\\ExampleUnityProject",
         },
@@ -829,10 +961,15 @@ test("renderer falls back to the session workspace when Claude cannot resolve a 
 });
 
 test("renderer replays Claude's native reference when session resolution fails", async () => {
-  const fixture = createNativeReferenceClickFixture("Missing.prefab");
+  const fixture = createNativeReferenceClickFixture("Missing.prefab", "resp-file-links");
   __test.startRenderer(
     {
-      claude: { sessions: { resolveFile: async () => null } },
+      claude: {
+        sessions: {
+          resolveReference: async () => null,
+          resolveFile: async () => null,
+        },
+      },
       ipc: { invoke: async () => assert.fail("unresolved paths must not reach Main") },
     },
     fixture.documentApi,

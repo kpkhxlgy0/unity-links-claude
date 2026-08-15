@@ -16,6 +16,10 @@ function parseDestination(raw) {
         return null;
       }
       value = decodeURIComponent(url.pathname);
+      const fragment = /^#L(\d+)(?:C(\d+))?$/i.exec(url.hash);
+      if (fragment) {
+        value += `:${fragment[1]}${fragment[2] ? `:${fragment[2]}` : ""}`;
+      }
     } catch {
       return null;
     }
@@ -463,14 +467,45 @@ function handleOpenResult(result, documentApi, link) {
 
 function openParsedAsset(api, documentApi, link, parsed) {
   return api.ipc.invoke("open-asset", parsed)
-    .then((result) => handleOpenResult(result, documentApi, link))
+    .then((result) => {
+      handleOpenResult(result, documentApi, link);
+    })
     .catch(() => {
       showNotice("Unity link handling failed.", documentApi);
     });
 }
 
-async function openNativeReference(api, documentApi, link, sessionId, relative) {
+async function openNativeReference(
+  api,
+  documentApi,
+  link,
+  sessionId,
+  entryId,
+  label,
+  occurrence,
+  visibleCount,
+  relative,
+) {
   const sessions = api.claude.sessions;
+  if (entryId && occurrence >= 0 && typeof sessions.resolveReference === "function") {
+    try {
+      const recoveredDestination = await sessions.resolveReference(
+        sessionId,
+        entryId,
+        label,
+        occurrence,
+        visibleCount,
+      );
+      const recovered = parseDestination(recoveredDestination);
+      if (recovered && hasSupportedProjectSegment(recovered.path)) {
+        if (recovered.line === 0) recovered.line = relative.line;
+        if (recovered.column === 0) recovered.column = relative.column;
+        await openParsedAsset(api, documentApi, link, recovered);
+        return;
+      }
+    } catch {}
+  }
+
   try {
     const resolvedPath = await sessions.resolveFile(sessionId, relative.path);
     const resolved = parseDestination(resolvedPath);
@@ -545,10 +580,28 @@ function startRenderer(api, documentApi) {
     if (!sessionId || typeof resolveFile !== "function") return;
     const relative = splitLineColumn(rawDestination.trim());
     if (relative.path === "") return;
+    const entry = link.closest?.("[data-epitaxy-entry]");
+    const entryId = entry?.getAttribute?.("data-epitaxy-entry");
+    const matchingReferences = Array.from(entry?.querySelectorAll?.('span[role="button"]') || [])
+      .filter((candidate) => {
+        const text = candidate.querySelector?.("code")?.textContent;
+        return typeof text === "string"
+          && splitLineColumn(text.trim()).path.toLowerCase() === relative.path.toLowerCase();
+      });
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    void openNativeReference(api, documentApi, link, sessionId, relative);
+    void openNativeReference(
+      api,
+      documentApi,
+      link,
+      sessionId,
+      entryId,
+      relative.path,
+      matchingReferences.indexOf(link),
+      matchingReferences.length,
+      relative,
+    );
   };
   documentApi.addEventListener("click", onClick, true);
   rendererCleanup = () => documentApi.removeEventListener("click", onClick, true);
