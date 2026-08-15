@@ -7,6 +7,7 @@ const EXPECTED_ID = "com.kpk.unity-asset-links";
 const EXPECTED_REPOSITORY = "kpkhxlgy0/unity-links-claude";
 const EXPECTED_ICON = "./icon.png";
 const EXPECTED_MIN_RUNTIME = "0.2.3";
+const EXPECTED_CLAUDE_PLUSPLUS_COMMIT = "4f78b1f31c4075ab60d7d4e819476e24b00023ed";
 const EXPECTED_SCOPE = "both";
 const EXPECTED_MAIN = "index.js";
 const EXPECTED_PERMISSIONS = ["ipc", "filesystem", "claude-sessions"];
@@ -138,6 +139,29 @@ export function validateRelease(repositoryRoot, requestedVersion) {
     if (!existsSync(resolve(repositoryRoot, relativePath))) {
       errors.push(`${relativePath}: required distribution file is missing`);
     }
+  }
+  for (const relativePath of [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+  ]) {
+    try {
+      const workflow = readFileSync(resolve(repositoryRoot, relativePath), "utf8");
+      if (!workflow.includes(`ref: ${EXPECTED_CLAUDE_PLUSPLUS_COMMIT}`)) {
+        errors.push(`${relativePath}: Claude++ ref must be ${EXPECTED_CLAUDE_PLUSPLUS_COMMIT}`);
+      }
+    } catch (error) {
+      errors.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  try {
+    const ciWorkflow = readFileSync(resolve(repositoryRoot, ".github/workflows/ci.yml"), "utf8");
+    const validationCommand =
+      `node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE ${requestedVersion}`;
+    if (!ciWorkflow.includes(validationCommand)) {
+      errors.push(`.github/workflows/ci.yml: release validation must use ${requestedVersion}`);
+    }
+  } catch (error) {
+    errors.push(`.github/workflows/ci.yml: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
     for (const relativePath of listDistributionFiles(repositoryRoot)) {

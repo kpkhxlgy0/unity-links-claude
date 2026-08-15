@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kpkhxlgy0/ClaudePlusPlus
-          ref: 9d4522e0bb5effd3722cca8a488bf0955e06ed0a
+          ref: 4f78b1f31c4075ab60d7d4e819476e24b00023ed
           path: .release-tools/claude-plusplus
           persist-credentials: false
 

@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { validateRelease } from "./validate-release.mjs";
 
 const fixtureRoots = [];
+const EXPECTED_CLAUDE_PLUSPLUS_COMMIT = "4f78b1f31c4075ab60d7d4e819476e24b00023ed";
 
 function writeJson(root, relativePath, value) {
   const target = join(root, relativePath);
@@ -62,6 +63,16 @@ function fixtureRoot() {
   ]) {
     writeText(root, relativePath);
   }
+  writeText(root, ".github/workflows/ci.yml", [
+    `ref: ${EXPECTED_CLAUDE_PLUSPLUS_COMMIT}`,
+    "run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.3",
+    "",
+  ].join("\n"));
+  writeText(
+    root,
+    ".github/workflows/release.yml",
+    `ref: ${EXPECTED_CLAUDE_PLUSPLUS_COMMIT}\n`,
+  );
   return root;
 }
 
@@ -149,6 +160,27 @@ test("rejects missing required distribution files", () => {
     rmSync(join(root, relativePath));
     assert.throws(() => validateRelease(root, "0.1.3"), new RegExp(relativePath.replace(".", "\\.")));
   }
+});
+
+test("rejects workflows pinned to another Claude++ release", () => {
+  for (const relativePath of [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+  ]) {
+    const root = fixtureRoot();
+    writeText(root, relativePath, "ref: 9d4522e0bb5effd3722cca8a488bf0955e06ed0a\n");
+    assert.throws(() => validateRelease(root, "0.1.3"), new RegExp(relativePath.replace(".", "\\.")));
+  }
+});
+
+test("rejects CI validation pinned to another Tweak version", () => {
+  const root = fixtureRoot();
+  writeText(root, ".github/workflows/ci.yml", [
+    `ref: ${EXPECTED_CLAUDE_PLUSPLUS_COMMIT}`,
+    "run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE 0.1.2",
+    "",
+  ].join("\n"));
+  assert.throws(() => validateRelease(root, "0.1.3"), /\.github\/workflows\/ci\.yml/);
 });
 
 test("rejects files outside the public distribution allowlist", () => {
